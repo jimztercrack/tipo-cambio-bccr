@@ -1,0 +1,96 @@
+name: Actualizar tipo de cambio
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 14 * * 1-5"
+
+permissions:
+  contents: write
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Consultar BCCR y generar JSON
+        env:
+          BCCR_TOKEN: ${{ secrets.BCCR_TOKEN }}
+          BCCR_NOMBRE: jimmy
+          BCCR_CORREO: jtellezsandoval@gmail.com
+        run: |
+          python - << 'PY'
+          import json
+          import os
+          import re
+          import html
+          from datetime import datetime
+          from urllib.parse import urlencode
+          from urllib.request import urlopen
+
+          token = os.environ["BCCR_TOKEN"]
+          nombre = os.environ["BCCR_NOMBRE"]
+          correo = os.environ["BCCR_CORREO"]
+
+          fecha = datetime.now().strftime("%d/%m/%Y")
+          actualizado = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+          def consultar(indicador):
+              params = {
+                  "Indicador": indicador,
+                  "FechaInicio": fecha,
+                  "FechaFinal": fecha,
+                  "Nombre": nombre,
+                  "SubNiveles": "N",
+                  "CorreoElectronico": correo,
+                  "Token": token
+              }
+
+              url = (
+                  "https://gee.bccr.fi.cr/Indicadores/Suscripciones/WS/"
+                  "wsindicadoreseconomicos.asmx/ObtenerIndicadoresEconomicosXML?"
+                  + urlencode(params)
+              )
+
+              with urlopen(url, timeout=60) as response:
+                  raw = response.read().decode("utf-8", errors="ignore")
+
+              data = html.unescape(raw)
+
+              m_valor = re.search(r"<NUM_VALOR>(.*?)</NUM_VALOR>", data, re.S)
+              if not m_valor:
+                  raise Exception(f"No se encontró NUM_VALOR para indicador {indicador}")
+
+              return float(m_valor.group(1).strip())
+
+          compra = consultar("317")
+          venta = consultar("318")
+
+          salida = {
+              "compra": compra,
+              "venta": venta,
+              "fecha": fecha,
+              "actualizado": actualizado
+          }
+
+          with open("tipocambio.json", "w", encoding="utf-8") as f:
+              json.dump(salida, f, ensure_ascii=False, indent=2)
+
+          print("tipocambio.json actualizado correctamente")
+          PY
+
+      - name: Guardar cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tipocambio.json
+          git diff --cached --quiet || git commit -m "Actualiza tipo de cambio"
+          git push
