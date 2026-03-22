@@ -3,7 +3,7 @@ name: Actualizar tipo de cambio
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 14 * * 1-5"
+    - cron: "0 14 * * *"
 
 permissions:
   contents: write
@@ -32,7 +32,8 @@ jobs:
           import os
           import re
           import html
-          from datetime import datetime
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
           from urllib.parse import urlencode
           from urllib.request import urlopen
 
@@ -40,14 +41,15 @@ jobs:
           nombre = os.environ["BCCR_NOMBRE"]
           correo = os.environ["BCCR_CORREO"]
 
-          fecha = datetime.now().strftime("%d/%m/%Y")
-          actualizado = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+          zona_cr = ZoneInfo("America/Costa_Rica")
+          ahora_cr = datetime.now(zona_cr)
+          actualizado = ahora_cr.strftime("%d/%m/%Y %H:%M:%S")
 
-          def consultar(indicador):
+          def consultar(indicador, fecha_texto):
               params = {
                   "Indicador": indicador,
-                  "FechaInicio": fecha,
-                  "FechaFinal": fecha,
+                  "FechaInicio": fecha_texto,
+                  "FechaFinal": fecha_texto,
                   "Nombre": nombre,
                   "SubNiveles": "N",
                   "CorreoElectronico": correo,
@@ -67,17 +69,35 @@ jobs:
 
               m_valor = re.search(r"<NUM_VALOR>(.*?)</NUM_VALOR>", data, re.S)
               if not m_valor:
-                  raise Exception(f"No se encontró NUM_VALOR para indicador {indicador}")
+                  return None
 
               return float(m_valor.group(1).strip())
 
-          compra = consultar("317")
-          venta = consultar("318")
+          fecha_encontrada = None
+          compra = None
+          venta = None
+
+          # Busca hasta 7 días hacia atrás
+          for i in range(0, 8):
+              fecha_prueba = ahora_cr - timedelta(days=i)
+              fecha_texto = fecha_prueba.strftime("%d/%m/%Y")
+
+              compra_temp = consultar("317", fecha_texto)
+              venta_temp = consultar("318", fecha_texto)
+
+              if compra_temp is not None and venta_temp is not None:
+                  fecha_encontrada = fecha_texto
+                  compra = compra_temp
+                  venta = venta_temp
+                  break
+
+          if compra is None or venta is None:
+              raise Exception("No se encontró tipo de cambio disponible en los últimos 7 días.")
 
           salida = {
               "compra": compra,
               "venta": venta,
-              "fecha": fecha,
+              "fecha": fecha_encontrada,
               "actualizado": actualizado
           }
 
