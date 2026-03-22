@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Descargar repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configurar Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -77,7 +77,6 @@ jobs:
           compra = None
           venta = None
 
-          # Busca hasta 7 días hacia atrás
           for i in range(0, 8):
               fecha_prueba = ahora_cr - timedelta(days=i)
               fecha_texto = fecha_prueba.strftime("%d/%m/%Y")
